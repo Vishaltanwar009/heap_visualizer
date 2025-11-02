@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Min-Heap Visualizer — Insert / Delete-Min</title>
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --accent:#4f46e5; --muted:#94a3b8; --good:#10b981; --danger:#ef4444;
+      --node-size:48px;
+    }
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial; background:linear-gradient(180deg,#071025 0%, #071827 100%);color:#e6eef8}
+    .app{max-width:1100px;margin:20px auto;padding:18px}
+    header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    h1{font-size:20px;margin:0}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .card{background:rgba(255,255,255,0.03);padding:12px;border-radius:10px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    input[type=number]{width:110px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+    button{background:var(--accent);border:none;padding:8px 12px;color:white;border-radius:8px;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+    .layout{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .pane{min-height:360px}
+    .array-view{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:12px}
+    .cell{width:64px;height:64px;border-radius:8px;background:linear-gradient(180deg,#0b1220,#071021);display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.04);position:relative}
+    .index{position:absolute;left:6px;top:6px;font-size:11px;color:var(--muted)}
+    .value{font-size:18px}
+    .svg-wrap{background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent);overflow:auto;padding:12px;border-radius:8px}
+    svg{width:100%;height:520px}
+    .node{fill:var(--card);stroke:rgba(255,255,255,0.06);stroke-width:1.5}
+    .node-text{font-size:14px;fill:#e6eef8}
+    .edge{stroke:rgba(255,255,255,0.06);stroke-width:1.6}
+    .highlight{stroke:var(--accent);stroke-width:2.5}
+    .log{height:92px;overflow:auto;padding:8px;font-size:13px;background:rgba(0,0,0,0.12);border-radius:8px}
+    footer{margin-top:12px;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Min-Heap Visualizer — Insert & Delete-Min</h1>
+    </header>
+
+    <div class="controls card">
+      <input id="valInput" type="number" placeholder="value to insert" />
+      <button id="insertBtn">Insert</button>
+      <button id="deleteMinBtn" title="Remove root">Delete Min</button>
+      <button id="resetBtn" class="ghost">Reset</button>
+    </div>
+
+    <div class="layout">
+      <div class="pane card">
+        <h3 style="margin-top:6px">Array Representation</h3>
+        <div id="array" class="array-view"></div>
+        <div style="margin-top:10px"><strong>Legend:</strong> index (top-left), value (center)</div>
+      </div>
+
+      <div class="pane card">
+        <h3 style="margin-top:6px">Binary Tree (visual)</h3>
+        <div class="svg-wrap"><svg id="treeSvg" viewBox="0 0 1000 520" preserveAspectRatio="xMidYMid meet"></svg></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:12px">
+      <div class="card" style="flex:1">
+        <h4 style="margin:6px 0">Operations Log</h4>
+        <div id="log" class="log"></div>
+      </div>
+      <div class="card" style="width:320px">
+        <h4 style="margin:6px 0">Notes</h4>
+        <div style="font-size:13px;color:#94a3b8;">Insert → bubble-up<br>Delete Min → remove root & sift-down<br>Click nodes or cells to highlight.</div>
+      </div>
+    </div>
+
+    <footer>Save as <code>heap-visualizer.html</code> and open in any browser.</footer>
+  </div>
+
+<script>
+(function(){
+  const arrEl = document.getElementById('array');
+  const svg = document.getElementById('treeSvg');
+  const logEl = document.getElementById('log');
+
+  let heap = [];
+
+  function log(msg){
+    const d = new Date().toLocaleTimeString();
+    logEl.innerHTML = `<div><strong>[${d}]</strong> ${msg}</div>` + logEl.innerHTML;
+  }
+
+  const left = i => 2*i+1;
+  const right = i => 2*i+2;
+  const parent = i => Math.floor((i-1)/2);
+
+  function renderArray(){
+    arrEl.innerHTML = '';
+    heap.forEach((v,i)=>{
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.i = i;
+      cell.innerHTML = `<div class="index">${i}</div><div class="value">${v}</div>`;
+      cell.addEventListener('click',()=>highlight(i));
+      arrEl.appendChild(cell);
+    });
+  }
+
+  function renderTree(){
+    svg.innerHTML = '';
+    if(heap.length===0) return;
+    const W=1000,H=520;
+    const positions=[];
+    for(let i=0;i<heap.length;i++){
+      const lvl=Math.floor(Math.log2(i+1));
+      const idxInLvl=i-(2**lvl-1);
+      const nodesInLvl=2**lvl;
+      const x=(W/(nodesInLvl+1))*(idxInLvl+1);
+      const y=40+lvl*90;
+      positions.push({x,y});
+    }
+    for(let i=0;i<heap.length;i++){
+      const l=left(i),r=right(i);
+      if(l<heap.length) drawEdge(positions[i],positions[l]);
+      if(r<heap.length) drawEdge(positions[i],positions[r]);
+    }
+    for(let i=0;i<heap.length;i++){
+      drawNode(positions[i],i,heap[i]);
+    }
+  }
+
+  function drawEdge(p1,p2){
+    const el=document.createElementNS('http://www.w3.org/2000/svg','line');
+    el.setAttribute('x1',p1.x); el.setAttribute('y1',p1.y+20);
+    el.setAttribute('x2',p2.x); el.setAttribute('y2',p2.y-20);
+    el.classList.add('edge');
+    svg.appendChild(el);
+  }
+
+  function drawNode(pos,i,val){
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('transform',`translate(${pos.x},${pos.y})`);
+    g.dataset.i=i;
+    const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('r',24);
+    c.classList.add('node');
+    const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('text-anchor','middle');
+    t.setAttribute('dy','6');
+    t.classList.add('node-text');
+    t.textContent=val;
+    g.appendChild(c); g.appendChild(t);
+    g.addEventListener('click',()=>highlight(i));
+    svg.appendChild(g);
+  }
+
+  function highlight(i){
+    document.querySelectorAll('.cell').forEach(c=>c.style.boxShadow='');
+    document.querySelectorAll('circle').forEach(c=>c.classList.remove('highlight'));
+    const cell=arrEl.querySelector(`[data-i='${i}']`);
+    if(cell) cell.style.boxShadow='0 8px 20px rgba(79,70,229,0.3)';
+    const node=[...svg.querySelectorAll('g')].find(g=>+g.dataset.i===i);
+    if(node) node.querySelector('circle').classList.add('highlight');
+    log(`Highlighted index ${i}, value=${heap[i]}`);
+  }
+
+  function swap(i,j){
+    const tmp=heap[i]; heap[i]=heap[j]; heap[j]=tmp;
+  }
+
+  function bubbleUp(i){
+    while(i>0 && heap[i]<heap[parent(i)]){
+      swap(i,parent(i));
+      i=parent(i);
+    }
+  }
+
+  function siftDown(i){
+    while(true){
+      const l=left(i),r=right(i);
+      let smallest=i;
+      if(l<heap.length && heap[l]<heap[smallest]) smallest=l;
+      if(r<heap.length && heap[r]<heap[smallest]) smallest=r;
+      if(smallest!==i){swap(i,smallest);i=smallest;} else break;
+    }
+  }
+
+  function renderAll(){renderArray();renderTree();}
+
+  async function doInsert(v){
+    if(v===''||isNaN(v)) return log('Enter a number');
+    v=+v;
+    heap.push(v);
+    log(`Inserted ${v}`);
+    bubbleUp(heap.length-1);
+    renderAll();
+  }
+
+  async function doDeleteMin(){
+    if(heap.length===0) return log('Heap empty');
+    const min=heap[0];
+    heap[0]=heap.pop();
+    siftDown(0);
+    renderAll();
+    log(`Deleted Min = ${min}`);
+  }
+
+  document.getElementById('insertBtn').addEventListener('click',()=>doInsert(document.getElementById('valInput').value));
+  document.getElementById('deleteMinBtn').addEventListener('click',doDeleteMin);
+  document.getElementById('resetBtn').addEventListener('click',()=>{heap=[];renderAll();log('Heap reset');});
+
+  heap=[12,35,45,60,70,80,90];
+  renderAll();
+  log('Ready');
+})();
+</script>
+</body>
+</html>
